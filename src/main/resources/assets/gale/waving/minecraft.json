@@ -1,0 +1,21 @@
+{
+    "_comment": "Gale waving classes for vanilla. Most vanilla blocks are found by class (leaves, bushes, vines, kelp, seagrass); this file names the rest and the exceptions. Resource packs and mods can add files under assets/<namespace>/waving/. Entries: block id, id[property=value,...] or namespace:*. Later packs win; \"replace\": true ignores lower packs' copies of the same file.",
+    "hanging": [
+        "minecraft:lantern[hanging=true]",
+        "minecraft:soul_lantern[hanging=true]",
+        "minecraft:hanging_roots"
+    ],
+    "none": [
+        "minecraft:lily_pad",
+        "minecraft:sea_pickle",
+        "minecraft:brown_mushroom",
+        "minecraft:red_mushroom",
+        "minecraft:crimson_fungus",
+        "minecraft:warped_fungus",
+        "minecraft:nether_wart"
+    ],
+    "biome_openness": {
+        "minecraft:cherry_grove": 0.9,
+        "minecraft:stony_shore": 1.3
+    }
+}
