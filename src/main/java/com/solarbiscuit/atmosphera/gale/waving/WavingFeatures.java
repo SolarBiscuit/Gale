@@ -47,6 +47,8 @@ public final class WavingFeatures {
 
     private static BitField waveClass;
     private static BitField anchor;
+    /** 0.2.0: marks hanging blocks inside wave_class 2 (shared with plants), so they get their own response. */
+    private static BitField hangingBit;
 
     private WavingFeatures() {
     }
@@ -54,6 +56,7 @@ public final class WavingFeatures {
     public static void register() {
         waveClass = VertexBits.material(Gale.MOD_ID, "wave_class", 2);
         anchor = VertexBits.light(Gale.MOD_ID, "anchor", 1);
+        hangingBit = VertexBits.light(Gale.MOD_ID, "hanging", 1);
         FrameUniforms.vec4("gale_Wave", "x: sway time (s x speed, wraps at 200), y: amplitude, "
                 + "z: wind openness at the camera, w: sea level", WavingFeatures::writeWave);
         FrameUniforms.vec4("gale_Lod", "x: sway on Voxy LODs, y: LOD sway distance (blocks), z: canopy shimmer strength",
@@ -70,14 +73,20 @@ public final class WavingFeatures {
                 """.formatted(cls));
         // Plants and hanging blocks share wave_class 2 (the anchor bit says which edge is pinned). Whichever of the
         // two features is active emits the code once.
+        // 0.2.0: hanging blocks (light bit "hanging") swing as driven damped oscillators: per-term gain and lag
+        // (gale_Hang0, gale_Hang1.xy) and a lean and gust that lag and overshoot (gale_Hang1.zw, integrated on the CPU).
         String flex = """
                 #ifndef GALE_FLEX
                 #define GALE_FLEX
                     if (%s(atmos_MaterialBits) == 2u && %s(atmos_LightBits) == 0u) {
-                        position += gale_offset(atmos_worldPos(position), 90.0, 210.0, 0.13, 0.45, 1.0);
+                        if (%s(atmos_LightBits) != 0u) {
+                            position += gale_offsetR(atmos_worldPos(position), 90.0, 210.0, 0.13, 0.35, 1.0, gale_Hang0, gale_Hang1);
+                        } else {
+                            position += gale_offset(atmos_worldPos(position), 90.0, 210.0, 0.13, 0.45, 1.0);
+                        }
                     }
                 #endif
-                """.formatted(cls, anc);
+                """.formatted(cls, anc, hangingBit.glslMacro());
         feature("waving_plants", GaleConfig.plants, WavingTable.PLANTS, CLASS_FLEX, true, flex);
         feature("waving_hanging", GaleConfig.hanging, WavingTable.HANGING, CLASS_FLEX, true, flex);
         feature("waving_aquatic", GaleConfig.aquatic, WavingTable.AQUATIC, CLASS_AQUATIC, true, """
@@ -85,6 +94,30 @@ public final class WavingFeatures {
                         position += gale_offset(atmos_worldPos(position), 40.0, 100.0, 0.11, 0.0, 0.15);
                     }
                 """.formatted(cls, anc));
+        FrameUniforms.vec4(features[2], "gale_Hang0", "hanging response: x, y: gain and lag (rad) of the n1 term, z, w: of the n2 term",
+                WavingFeatures::writeHang0);
+        FrameUniforms.vec4(features[2], "gale_Hang1", "hanging response: x, y: gain and lag of the n1+n2 term, z: lean drive, w: gust drive (oscillator outputs)",
+                WavingFeatures::writeHang1);
+        FrameUniforms.vec4(features[0], "gale_Flutter", "x: leaf flutter strength (brightness, 0 = off), y: fade start, z: fade end (blocks)",
+                WavingFeatures::writeFlutter);
+        // Leaf flutter (0.2.0): leaves near the camera brighten and darken a little per half-block cell, as leaves
+        // turning in the light. 4.5 and 6.55 cycles per sway second (whole cycles per 200 s), under 10 Hz at any speed.
+        ShaderSnippets.register(features[0], ShaderHook.FRAG_PRE_FOG, ShaderSnippets.PASS_ALL, 0, """
+                    if (%s(v_AtmosMaterialBits) == 1u && gale_Flutter.x > 0.0) {
+                        float galeFd = length(v_AtmosRelPos);
+                        float galeFade = (1.0 - smoothstep(gale_Flutter.y, gale_Flutter.z, galeFd))
+                                * smoothstep(2.0, 4.0, 0.5 / max(galeFd * 1.4 * atmos_Screen.y, 1e-5));
+                        if (galeFade > 0.0) {
+                            uvec3 galeQ = uvec3(ivec3(floor((v_AtmosRelPos + atmos_CameraPos.xyz) * 2.0)));
+                            uint galeHash = (galeQ.x * 73856093u) ^ (galeQ.y * 19349663u) ^ (galeQ.z * 83492791u);
+                            galeHash = (galeHash ^ (galeHash >> 13u)) * 1274126177u;
+                            float galeH = float(galeHash & 65535u) * (1.0 / 65535.0);
+                            float galeC = gale_Wave.x * 0.0314159265;
+                            float galeF = 0.6 * sin(galeC * 900.0 + galeH * 6.2831853) + 0.4 * sin(galeC * 1310.0 + galeH * 17.0);
+                            diffuseColor.rgb *= 1.0 + gale_Flutter.x * galeFade * galeF;
+                        }
+                    }
+                """.formatted(cls));
 
         // Voxy LOD terrain (AtmospheraLib compat.voxy): the same gale_offset, then a canopy shading wave further out
         lod(features[0], cls, 1, "110.0, 250.0, 0.08, 0.0, 1.0", 0.08, false);
@@ -192,6 +225,8 @@ public final class WavingFeatures {
         private final int pinned;
         private final boolean top;
         private final int towardsRoot;
+        /** Hanging kind: the block-wide "hanging" light bit (0.2.0). */
+        private final int hang;
 
         WaveHook(byte kind, int material, boolean anchored) {
             this.kind = kind;
@@ -200,6 +235,7 @@ public final class WavingFeatures {
             this.pinned = anchored ? anchor.set(0, 1) : 0;
             this.top = kind == WavingTable.HANGING;
             this.towardsRoot = top ? 1 : -1;
+            this.hang = top ? hangingBit.set(0, 1) : 0;
         }
 
         @Override
@@ -214,7 +250,7 @@ public final class WavingFeatures {
             }
             // Inside a column (same class towards the root): this block's root edge moves like the block it
             // touches, so leave it free.
-            return WavingTable.kindAt(level, pos, towardsRoot) == kind ? 0 : pinned;
+            return (WavingTable.kindAt(level, pos, towardsRoot) == kind ? 0 : pinned) | hang;
         }
 
         @Override
@@ -255,6 +291,17 @@ public final class WavingFeatures {
      */
     public static void stepSwayTime() {
         swayTime = (swayTime + AtmosClock.deltaSeconds() * GaleConfig.speed.get() * SPEED_SCALE) % SWAY_WRAP;
+        double held = AtmosClock.overrideSeconds();
+        if (!Double.isNaN(held)) {
+            // Lib dev clock override (lib 0.6.1): a held sway time, for frame-exact test shots.
+            swayTime = held % SWAY_WRAP;
+        }
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level != null) {
+            stepDrive(level);
+        } else {
+            driveStarted = false;
+        }
     }
 
     /** Render thread, when the uniform block is written (also while the features are off, so it stays cheap). */
@@ -273,6 +320,103 @@ public final class WavingFeatures {
         Vec3 eye = camera.getPosition();
         out[2] = GaleWind.INSTANCE.cameraOpenness(level, eye.x, eye.y, eye.z);
         out[3] = level.getSeaLevel();
+    }
+
+    // ---- Hanging response (0.2.0) ----
+    /** Natural frequency of the hanging swing in cycles per 200 s of sway time (between n1 = 90 and n2 = 210). */
+    private static final double HANG_N0 = 150.0;
+    private static final double HANG_ZETA = 0.25;
+    /** Lean and gust oscillator, real time: 0.35 Hz, lightly damped, so a gust makes lanterns overshoot and settle. */
+    private static final double DRIVE_OMEGA = 2.2;
+    private static final double DRIVE_ZETA = 0.18;
+    private static final float[] HANG = hangGains();
+    private static final com.solarbiscuit.atmosphera.lib.wind.WindVector DRIVE_WIND = new com.solarbiscuit.atmosphera.lib.wind.WindVector();
+    private static double leanX, leanV, gustX, gustV;
+    private static boolean driveStarted;
+
+    /**
+     * Steady-state response of a damped oscillator x'' + 2 zeta w0 x' + w0^2 x = w0^2 u to each sine of the sway:
+     * gain 1 / sqrt((1 - r^2)^2 + (2 zeta r)^2) and lag atan2(2 zeta r, 1 - r^2), r = n / n0. Gains are scaled so the
+     * main pair (weights 0.65, 0.35) keeps its total, so the response reshapes the motion instead of growing it.
+     */
+    static float[] hangGains() {
+        double[] n = {90.0, 210.0, 300.0};
+        double[] g = new double[3];
+        double[] d = new double[3];
+        for (int i = 0; i < 3; i++) {
+            double r = n[i] / HANG_N0;
+            double a = 1.0 - r * r;
+            double b = 2.0 * HANG_ZETA * r;
+            g[i] = 1.0 / Math.sqrt(a * a + b * b);
+            d[i] = Math.atan2(b, a);
+        }
+        double k = 1.0 / (0.65 * g[0] + 0.35 * g[1]);
+        return new float[] {(float) (g[0] * k), (float) d[0], (float) (g[1] * k), (float) d[1], (float) (g[2] * k), (float) d[2]};
+    }
+
+    /** Per frame: integrates the lean (wind strength) and gust oscillators over this frame's world-clock step. */
+    private static void stepDrive(ClientLevel level) {
+        com.solarbiscuit.atmosphera.lib.wind.Wind.global(level, Minecraft.getInstance().getFrameTime(), DRIVE_WIND);
+        double u = DRIVE_WIND.strength;
+        double ug = DRIVE_WIND.gust;
+        if (!driveStarted) {
+            driveStarted = true;
+            leanX = u;
+            gustX = ug;
+            leanV = gustV = 0.0;
+            return;
+        }
+        double dt = Math.min(AtmosClock.deltaSeconds(), 0.25);
+        int steps = Math.max(1, (int) Math.ceil(dt / (1.0 / 120.0)));
+        double h = dt / steps;
+        double w2 = DRIVE_OMEGA * DRIVE_OMEGA;
+        double c = 2.0 * DRIVE_ZETA * DRIVE_OMEGA;
+        for (int i = 0; i < steps; i++) {
+            leanV += (w2 * (u - leanX) - c * leanV) * h;
+            leanX += leanV * h;
+            gustV += (w2 * (ug - gustX) - c * gustV) * h;
+            gustX += gustV * h;
+        }
+    }
+
+    private static void writeHang0(float[] out) {
+        if (!GaleConfig.hangingSwing.get()) {
+            out[0] = 1f;
+            out[1] = 0f;
+            out[2] = 1f;
+            out[3] = 0f;
+            return;
+        }
+        out[0] = HANG[0];
+        out[1] = HANG[1];
+        out[2] = HANG[2];
+        out[3] = HANG[3];
+    }
+
+    private static void writeHang1(float[] out) {
+        if (!GaleConfig.hangingSwing.get() || !driveStarted) {
+            out[0] = 1f;
+            out[1] = 0f;
+            out[2] = DRIVE_WIND.strength;
+            out[3] = DRIVE_WIND.gust;
+            return;
+        }
+        out[0] = HANG[4];
+        out[1] = HANG[5];
+        // Overshoot may exceed 1 briefly; gale_offsetR still caps the offset at 0.2 blocks.
+        out[2] = (float) Math.max(0.0, leanX);
+        out[3] = (float) Math.max(0.0, gustX);
+    }
+
+    private static void writeFlutter(float[] out) {
+        double strength = GaleConfig.leafFlutter.get();
+        if (strength <= 0.0) {
+            return;
+        }
+        // 8% brightness swing at 100%, more in wind, scaled by the sway amount like the motion.
+        out[0] = (float) (strength * 0.08 * (0.4 + 0.6 * DRIVE_WIND.strength) * Math.min(1.0, GaleConfig.amplitude.get()));
+        out[1] = 16f;
+        out[2] = 24f;
     }
 
     private static void writeLod(float[] out) {
@@ -320,32 +464,38 @@ public final class WavingFeatures {
             // each (the weights sum to 1). A wave along the wind vector itself shifts its phase by 0.45 |p| dTheta when
             // the wind turns; world positions are thousands of blocks, so every gust veer made foliage race at 20-250x
             // speed (Gale 0.1.0-0.1.7). Turning the wind now only moves the weights, slowly.
+            // The weights are computed once per frame on the CPU (lib 0.4.0 atmos_WindAxes, audit R3); same formula.
             vec4 gale_axisWeights() {
-                vec4 galeW = max(vec4(atmos_Wind.x, -atmos_Wind.x, atmos_Wind.y, -atmos_Wind.y), 0.0);
-                galeW *= galeW;
-                return galeW / max(galeW.x + galeW.y + galeW.z + galeW.w, 1e-4);
+                return atmos_WindAxes;
             }
             // sum over the axes of w_k * sin(base - along_k * k), with along_k = (x, -x, z, -z)
             float gale_travel(vec4 galeW, vec2 galeXZ, float galeBase, float galeK) {
                 vec4 galeAlong = vec4(galeXZ.x, -galeXZ.x, galeXZ.y, -galeXZ.y) * galeK;
                 return dot(galeW, sin(vec4(galeBase) - galeAlong));
             }
-            vec3 gale_offset(vec3 galeP, float galeN1, float galeN2, float galeAmp, float galeLean, float galeWindy) {
+            // galeR0 = (gain, lag) of the n1 and n2 terms, galeR1 = (gain, lag) of the n1+n2 term, strength, gust.
+            // gale_offset passes the identity (1, 0, 1, 0), (1, 0, wind strength, gust): the 0.1.x motion exactly.
+            vec3 gale_offsetR(vec3 galeP, float galeN1, float galeN2, float galeAmp, float galeLean, float galeWindy,
+                              vec4 galeR0, vec4 galeR1) {
                 vec2 galeDir = atmos_Wind.xy;
                 vec4 galeAxes = gale_axisWeights();
                 float galeCycle = gale_Wave.x * 0.0314159265;
                 float galeAlt = clamp((galeP.y - gale_Wave.w) * 0.0104, 0.0, 0.6);
-                float galeEnergy = mix(0.6, (0.3 + 1.1 * atmos_Wind.z) * gale_Wave.z * (1.0 + galeAlt), galeWindy);
+                float galeEnergy = mix(0.6, (0.3 + 1.1 * galeR1.z) * gale_Wave.z * (1.0 + galeAlt), galeWindy);
                 float galeP1 = galeCycle * galeN1;
                 float galeP2 = galeCycle * galeN2 + galeP.x * 0.83 - galeP.z * 0.61 + galeP.y * 0.5;
                 float galeP3 = galeCycle * (galeN1 + galeN2) + galeP.z * 0.7 - galeP.x * 0.4 + 1.7;
-                float galeGust = 0.75 + 0.5 * atmos_Wind.w * (0.5 + 0.5 * gale_travel(galeAxes, galeP.xz, galeCycle * 7.0, 0.08));
-                float galeMain = (0.65 * gale_travel(galeAxes, galeP.xz, galeP1, 0.45) + 0.35 * sin(galeP2)) * galeGust
-                        + galeLean * atmos_Wind.z;
-                vec2 galeXZ = galeDir * galeMain + vec2(-galeDir.y, galeDir.x) * (0.3 * sin(galeP3));
-                vec3 galeOff = vec3(galeXZ.x, 0.12 * sin(galeP3 + galeP1 - 0.45 * (galeP.x + galeP.z)), galeXZ.y) * (galeAmp * galeEnergy * gale_Wave.y);
+                float galeGust = 0.75 + 0.5 * galeR1.w * (0.5 + 0.5 * gale_travel(galeAxes, galeP.xz, galeCycle * 7.0, 0.08));
+                float galeMain = (0.65 * galeR0.x * gale_travel(galeAxes, galeP.xz, galeP1 - galeR0.y, 0.45)
+                        + 0.35 * galeR0.z * sin(galeP2 - galeR0.w)) * galeGust + galeLean * galeR1.z;
+                vec2 galeXZ = galeDir * galeMain + vec2(-galeDir.y, galeDir.x) * (0.3 * galeR1.x * sin(galeP3 - galeR1.y));
+                vec3 galeOff = vec3(galeXZ.x, 0.12 * galeR1.x * sin(galeP3 - galeR1.y + galeP1 - 0.45 * (galeP.x + galeP.z)), galeXZ.y) * (galeAmp * galeEnergy * gale_Wave.y);
                 float galeLen = length(galeOff);
                 return galeLen > 0.2 ? galeOff * (0.2 / galeLen) : galeOff;
+            }
+            vec3 gale_offset(vec3 galeP, float galeN1, float galeN2, float galeAmp, float galeLean, float galeWindy) {
+                return gale_offsetR(galeP, galeN1, galeN2, galeAmp, galeLean, galeWindy, vec4(1.0, 0.0, 1.0, 0.0),
+                        vec4(1.0, 0.0, atmos_Wind.z, atmos_Wind.w));
             }
             #endif
             """;

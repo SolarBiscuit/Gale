@@ -16,6 +16,8 @@ public final class GaleConfig {
     public static AtmosOption<Boolean> lodSway;
     public static AtmosOption<Double> lodSwayDistance;
     public static AtmosOption<Double> lodShimmer;
+    public static AtmosOption<Boolean> hangingSwing;
+    public static AtmosOption<Double> leafFlutter;
 
     private GaleConfig() {
     }
@@ -39,6 +41,12 @@ public final class GaleConfig {
                 "How far blocks move. 100% is a gentle breeze; movement is always capped at 0.2 blocks.");
         speed = config.percent("sway_speed", 1.0, 0.0, 2.0, ChangeTier.LIVE, "Sway speed",
                 "How fast blocks sway. 100% is a calm, natural pace; 0% stops the motion.");
+
+        hangingSwing = config.toggle("hanging_swing", true, ChangeTier.LIVE, "Hanging swing",
+                "Lanterns, chains and vines swing like hanging objects: they lag behind gusts, overshoot and settle, "
+                        + "and follow the slow sway more than the quick flutter. Off: they move like ground plants.");
+        leafFlutter = config.percent("leaf_flutter", 0.5, 0.0, 1.0, ChangeTier.LIVE, "Leaf flutter",
+                "Leaves close to you flicker a little in the light, as if turning in the wind (0% = off).");
 
         config.section("lod", "Voxy LODs: foliage keeps moving past the vanilla render distance (needs AtmospheraLib's Voxy LOD shading, no shader pack).");
         lodSway = config.toggle("lod_sway", true, ChangeTier.LIVE, "Sway on LODs",
