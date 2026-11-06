@@ -4,7 +4,9 @@ import com.solarbiscuit.atmosphera.gale.Gale;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockGetter;
+import com.solarbiscuit.atmosphera.lib.mesh.MeshHooks;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.Arrays;
@@ -30,19 +32,29 @@ public final class WavingTable {
     record Classification(BlockState[] states, byte[] kinds, int[] counts, int files) {
     }
 
-    private static final WavingTable EMPTY = new WavingTable(new byte[0], false);
+    private static final WavingTable EMPTY = new WavingTable(new byte[0], false, 0);
+    /** Version stamped into each block state's cached class (0 never matches: states start at 0). */
+    private static int nextVersion = 1;
+
+    /** Whether block states carry Gale's cache field (the mixin applied); checked on first use. */
+    private static final class StateCache {
+        static final boolean ON = Blocks.AIR.defaultBlockState() instanceof WavingKindCache;
+    }
     private static volatile WavingTable current = EMPTY;
     private static volatile Classification classification;
-    /** Per chunk-builder thread: the last state looked up, and a scratch position for neighbour reads. */
+    /** Per chunk-builder thread: the last state looked up (only used if the block-state cache is missing). */
     private static final ThreadLocal<Scratch> SCRATCH = ThreadLocal.withInitial(Scratch::new);
 
     private final byte[] kinds;
     /** False when no classified state can occlude, so the hot path skips every full cube with one field read. */
     private final boolean occludingEntries;
+    /** 24-bit table version for the per-state cache. */
+    private final int version;
 
-    private WavingTable(byte[] kinds, boolean occludingEntries) {
+    private WavingTable(byte[] kinds, boolean occludingEntries, int version) {
         this.kinds = kinds;
         this.occludingEntries = occludingEntries;
+        this.version = version;
     }
 
     static void setClassification(Classification next) {
@@ -82,7 +94,7 @@ public final class WavingTable {
             Gale.LOGGER.warn("Waving table ({}): {} of {} states had no usable block-state id, {} id clashes.", when,
                     missing, c.states().length, clashes);
         }
-        publish(new WavingTable(kinds, occluding), when);
+        publish(new WavingTable(kinds, occluding, nextVersion++ & 0xFFFFFF), when);
         return true;
     }
 
@@ -113,11 +125,24 @@ public final class WavingTable {
         return id >= 0 && id < kinds.length ? kinds[id] : NONE;
     }
 
-    /** The waving class of a state. Any thread; remembers the last state per thread (one block = many calls). */
+    /**
+     * The waving class of a state. Any thread, allocation-free. The class is cached on the state itself, stamped with
+     * the table version (0.1.9; one field read per call). Without the cache field, remembers the last state per thread.
+     */
     public static int kind(BlockState state) {
         WavingTable table = current;
         if (state.canOcclude() && !table.occludingEntries) {
             return NONE;
+        }
+        if (StateCache.ON) {
+            WavingKindCache cache = (WavingKindCache) state;
+            int packed = cache.gale$packedKind();
+            if (packed >>> 8 == table.version) {
+                return packed & 0xFF;
+            }
+            int kind = table.lookup(state);
+            cache.gale$setPackedKind(table.version << 8 | kind);
+            return kind;
         }
         Scratch scratch = SCRATCH.get();
         if (scratch.state != state || scratch.table != table) {
@@ -128,14 +153,15 @@ public final class WavingTable {
         return scratch.kind;
     }
 
-    /** Waving class of the block at {@code pos + (0, dy, 0)}. */
+    /**
+     * Waving class of the block at {@code pos + (0, dy, 0)}, read through the lib's slice fast path. Anchoring only
+     * ever asks for dy = +-1, which stays inside the mesher's slice margin.
+     */
     static int kindAt(BlockGetter level, BlockPos pos, int dy) {
-        Scratch scratch = SCRATCH.get();
-        return current.lookup(level.getBlockState(scratch.pos.setWithOffset(pos, 0, dy, 0)));
+        return kind(MeshHooks.blockAt(level, pos.getX(), pos.getY() + dy, pos.getZ()));
     }
 
     private static final class Scratch {
-        final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         BlockState state;
         WavingTable table;
         int kind;

@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "minVersion": "0.8.5",
+  "package": "com.solarbiscuit.atmosphera.gale.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "gale.refmap.json",
+  "client": [
+    "BlockStateBaseMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

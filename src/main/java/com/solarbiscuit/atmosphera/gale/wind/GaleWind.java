@@ -40,6 +40,12 @@ public final class GaleWind implements WindProvider {
     // Render thread only: the camera's openness, eased so biome borders do not snap the sway amount.
     private float cameraOpenness = 1f;
     private long lastCameraNanos;
+    private Level lastCameraLevel;
+    private double lastCameraX;
+    private double lastCameraY;
+    private double lastCameraZ;
+    /** A camera move longer than this in one frame is a teleport: the openness snaps instead of easing (0.1.9). */
+    private static final double SNAP_DISTANCE_SQ = 32.0 * 32.0;
 
     private GaleWind() {
     }
@@ -101,11 +107,28 @@ public final class GaleWind implements WindProvider {
         return value;
     }
 
-    /** Render thread, once per frame: openness at the camera, eased over a few seconds (gale_Wave.z). */
+    /**
+     * Render thread, once per frame: openness at the camera, eased over a few seconds (gale_Wave.z) so biome borders
+     * do not snap the sway amount. A new level (join, dimension change) or a camera jump over 32 blocks (teleport,
+     * spectator switch) snaps to the new value: easing there only showed the wrong sway for a few seconds.
+     */
     public float cameraOpenness(Level level, double x, double y, double z) {
         float target = openness(level, Mth.floor(x), Mth.floor(y), Mth.floor(z));
         long now = System.nanoTime();
-        double dt = lastCameraNanos == 0 ? 10.0 : Math.min((now - lastCameraNanos) / 1.0e9, 10.0);
+        double dx = x - lastCameraX;
+        double dy = y - lastCameraY;
+        double dz = z - lastCameraZ;
+        boolean jump = level != lastCameraLevel || dx * dx + dy * dy + dz * dz > SNAP_DISTANCE_SQ;
+        lastCameraLevel = level;
+        lastCameraX = x;
+        lastCameraY = y;
+        lastCameraZ = z;
+        if (lastCameraNanos == 0 || jump) {
+            lastCameraNanos = now;
+            cameraOpenness = target;
+            return cameraOpenness;
+        }
+        double dt = Math.min((now - lastCameraNanos) / 1.0e9, 10.0);
         lastCameraNanos = now;
         cameraOpenness += (float) ((target - cameraOpenness) * (1.0 - Math.exp(-dt / 2.5)));
         return cameraOpenness;
@@ -119,6 +142,7 @@ public final class GaleWind implements WindProvider {
 
     public void clearCaches() {
         openness.clear();
+        lastCameraLevel = null;
     }
 
     private static float byName(String path) {
