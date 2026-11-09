@@ -49,6 +49,13 @@ public final class WavingFeatures {
     private static BitField anchor;
     /** 0.2.0: marks hanging blocks inside wave_class 2 (shared with plants), so they get their own response. */
     private static BitField hangingBit;
+    /**
+     * 0.3.0: per-vertex lever arm of hanging blocks, distance below the chain's anchor in thirds of a block (0-6, 0 =
+     * unknown: lever 1). Counted at most two blocks up (inside the slice's margin) and capped at two blocks, so the two
+     * blocks sharing a vertex always agree on it, also across a section boundary.
+     */
+    private static BitField lever;
+    private static final int LEVER_MAX = 2;
 
     private WavingFeatures() {
     }
@@ -57,6 +64,9 @@ public final class WavingFeatures {
         waveClass = VertexBits.material(Gale.MOD_ID, "wave_class", 2);
         anchor = VertexBits.light(Gale.MOD_ID, "anchor", 1);
         hangingBit = VertexBits.light(Gale.MOD_ID, "hanging", 1);
+        lever = VertexBits.light(Gale.MOD_ID, "lever", 3);
+        FrameUniforms.vec4("gale_Contact", "x: entity bending strength, y: shelter strength, z: chain lever on, w: entities in gale_Push",
+                WavingFeatures::writeContact);
         FrameUniforms.vec4("gale_Wave", "x: sway time (s x speed, wraps at 200), y: amplitude, "
                 + "z: wind openness at the camera, w: sea level", WavingFeatures::writeWave);
         FrameUniforms.vec4("gale_Lod", "x: sway on Voxy LODs, y: LOD sway distance (blocks), z: canopy shimmer strength",
@@ -68,7 +78,7 @@ public final class WavingFeatures {
         // downwind per unit of wind strength, windy: 0 = ignores the wind (water current), 1 = follows it.
         feature("waving_leaves", GaleConfig.leaves, WavingTable.LEAVES, CLASS_LEAVES, false, """
                     if (%s(atmos_MaterialBits) == 1u) {
-                        position += gale_offset(atmos_worldPos(position), 110.0, 250.0, 0.08, 0.0, 1.0);
+                        position += gale_offsetS(atmos_worldPos(position), 110.0, 250.0, 0.08, 0.0, 1.0, gale_shelter(position));
                     }
                 """.formatted(cls));
         // Plants and hanging blocks share wave_class 2 (the anchor bit says which edge is pinned). Whichever of the
@@ -78,15 +88,24 @@ public final class WavingFeatures {
         String flex = """
                 #ifndef GALE_FLEX
                 #define GALE_FLEX
-                    if (%s(atmos_MaterialBits) == 2u && %s(atmos_LightBits) == 0u) {
-                        if (%s(atmos_LightBits) != 0u) {
-                            position += gale_offsetR(atmos_worldPos(position), 90.0, 210.0, 0.13, 0.35, 1.0, gale_Hang0, gale_Hang1);
+                    if (%1$s(atmos_MaterialBits) == 2u && %2$s(atmos_LightBits) == 0u) {
+                        float galeShelter = gale_shelter(position);
+                        if (%3$s(atmos_LightBits) != 0u) {
+                            // 0.3.0: the lever arm below the chain's anchor (thirds of a block; 0 = unknown, 1 block).
+                            float galeQ = float(%4$s(atmos_LightBits));
+                            float galeLever = gale_Contact.z > 0.5 && galeQ > 0.5 ? galeQ / 3.0 : 1.0;
+                            position += gale_offsetRS(atmos_worldPos(position), 90.0, 210.0, 0.13, 0.35, 1.0, gale_Hang0, gale_Hang1,
+                                    galeShelter * galeLever);
                         } else {
-                            position += gale_offset(atmos_worldPos(position), 90.0, 210.0, 0.13, 0.45, 1.0);
+                            vec3 galeOff = gale_offsetS(atmos_worldPos(position), 90.0, 210.0, 0.13, 0.45, 1.0, galeShelter);
+                            if (gale_Contact.x > 0.0 && gale_Contact.w > 0.5) {
+                                galeOff = gale_cap(galeOff + gale_push(position) * gale_Contact.x);
+                            }
+                            position += galeOff;
                         }
                     }
                 #endif
-                """.formatted(cls, anc, hangingBit.glslMacro());
+                """.formatted(cls, anc, hangingBit.glslMacro(), lever.glslMacro());
         feature("waving_plants", GaleConfig.plants, WavingTable.PLANTS, CLASS_FLEX, true, flex);
         feature("waving_hanging", GaleConfig.hanging, WavingTable.HANGING, CLASS_FLEX, true, flex);
         feature("waving_aquatic", GaleConfig.aquatic, WavingTable.AQUATIC, CLASS_AQUATIC, true, """
@@ -98,6 +117,14 @@ public final class WavingFeatures {
                 WavingFeatures::writeHang0);
         FrameUniforms.vec4(features[2], "gale_Hang1", "hanging response: x, y: gain and lag of the n1+n2 term, z: lean drive, w: gust drive (oscillator outputs)",
                 WavingFeatures::writeHang1);
+        for (int i = 0; i < EntityPush.MAX; i++) {
+            int n = i;
+            FrameUniforms.vec4(features[1], "gale_Push" + i, "entity " + i + " pushing plants aside: xyz feet relative to the camera, w radius (0 = none)",
+                    out -> EntityPush.write(n, out));
+        }
+        com.solarbiscuit.atmosphera.lib.world.ColumnFieldShader.requireInTerrain(features[0]);
+        com.solarbiscuit.atmosphera.lib.world.ColumnFieldShader.requireInTerrain(features[1]);
+        com.solarbiscuit.atmosphera.lib.world.ColumnFieldShader.requireInTerrain(features[2]);
         FrameUniforms.vec4(features[0], "gale_Flutter", "x: leaf flutter strength (brightness, 0 = off), y: fade start, z: fade end (blocks)",
                 WavingFeatures::writeFlutter);
         // Leaf flutter (0.2.0): leaves near the camera brighten and darken a little per half-block cell, as leaves
@@ -250,7 +277,14 @@ public final class WavingFeatures {
             }
             // Inside a column (same class towards the root): this block's root edge moves like the block it
             // touches, so leave it free.
-            return (WavingTable.kindAt(level, pos, towardsRoot) == kind ? 0 : pinned) | hang;
+            boolean continues = WavingTable.kindAt(level, pos, towardsRoot) == kind;
+            int bits = (continues ? 0 : pinned) | hang;
+            if (top && GaleConfig.chainSwing.get()) {
+                // 0.3.0: blocks of the chain above this one, at most LEVER_MAX (block-level here; per vertex below).
+                int depth = !continues ? 0 : WavingTable.kindAt(level, pos, 2) == kind ? 2 : 1;
+                bits = lever.set(bits, depth + 1);
+            }
+            return bits;
         }
 
         @Override
@@ -275,6 +309,14 @@ public final class WavingFeatures {
 
         @Override
         public int vertexLightBits(BlockState state, int bits, float x, float y, float z) {
+            int stored = lever.get(bits);
+            if (stored > 0) {
+                // 0.3.0: lever = blocks above (0-2) + this vertex's drop below the block top, capped at 2 blocks, in
+                // thirds. The top edge of one block and the bottom edge of the block above give the same value.
+                float arm = Math.min(LEVER_MAX, (stored - 1) + (1f - Math.max(0f, Math.min(1f, y))));
+                // At least a third: 0 means "unknown" to the shader (lever 1), and only the pinned top edge has arm 0.
+                bits = lever.set(bits, Math.max(1, Math.round(arm * 3f)));
+            }
             if (anchor.get(bits) == 0) {
                 return bits;
             }
@@ -291,6 +333,7 @@ public final class WavingFeatures {
      */
     public static void stepSwayTime() {
         swayTime = (swayTime + AtmosClock.deltaSeconds() * GaleConfig.speed.get() * SPEED_SCALE) % SWAY_WRAP;
+        stepContact();
         double held = AtmosClock.overrideSeconds();
         if (!Double.isNaN(held)) {
             // Lib dev clock override (lib 0.6.1): a held sway time, for frame-exact test shots.
@@ -408,6 +451,37 @@ public final class WavingFeatures {
         out[3] = (float) Math.max(0.0, gustX);
     }
 
+    // ---- Contact (0.3.0) ----
+    private static final Object COLUMN_OWNER = new Object();
+
+    /** Per frame: the entities near the camera (bending), and the column field kept running for shelter. */
+    private static void stepContact() {
+        Minecraft mc = Minecraft.getInstance();
+        ClientLevel level = mc.level;
+        if (level == null) {
+            EntityPush.count = 0;
+            return;
+        }
+        boolean plants = features[1] != null && features[1].isActive();
+        if (plants && GaleConfig.entityBending.get() > 0.0) {
+            EntityPush.update(level, mc.gameRenderer.getMainCamera().getPosition(), mc.getFrameTime());
+        } else {
+            EntityPush.count = 0;
+        }
+        boolean anyActive = plants || features[0] != null && features[0].isActive()
+                || features[2] != null && features[2].isActive();
+        if (anyActive && GaleConfig.shelter.get() > 0.0) {
+            com.solarbiscuit.atmosphera.lib.world.ColumnField.use(COLUMN_OWNER, level, 256);
+        }
+    }
+
+    private static void writeContact(float[] out) {
+        out[0] = GaleConfig.entityBending.get().floatValue();
+        out[1] = com.solarbiscuit.atmosphera.lib.world.ColumnField.ready() ? GaleConfig.shelter.get().floatValue() : 0f;
+        out[2] = GaleConfig.chainSwing.get() ? 1f : 0f;
+        out[3] = EntityPush.count;
+    }
+
     private static void writeFlutter(float[] out) {
         double strength = GaleConfig.leafFlutter.get();
         if (strength <= 0.0) {
@@ -468,6 +542,11 @@ public final class WavingFeatures {
             vec4 gale_axisWeights() {
                 return atmos_WindAxes;
             }
+            // Offsets stay within 0.2 blocks (Xenon's section culling margin).
+            vec3 gale_cap(vec3 galeOff) {
+                float galeLen = length(galeOff);
+                return galeLen > 0.2 ? galeOff * (0.2 / galeLen) : galeOff;
+            }
             // sum over the axes of w_k * sin(base - along_k * k), with along_k = (x, -x, z, -z)
             float gale_travel(vec4 galeW, vec2 galeXZ, float galeBase, float galeK) {
                 vec4 galeAlong = vec4(galeXZ.x, -galeXZ.x, galeXZ.y, -galeXZ.y) * galeK;
@@ -475,8 +554,9 @@ public final class WavingFeatures {
             }
             // galeR0 = (gain, lag) of the n1 and n2 terms, galeR1 = (gain, lag) of the n1+n2 term, strength, gust.
             // gale_offset passes the identity (1, 0, 1, 0), (1, 0, wind strength, gust): the 0.1.x motion exactly.
-            vec3 gale_offsetR(vec3 galeP, float galeN1, float galeN2, float galeAmp, float galeLean, float galeWindy,
-                              vec4 galeR0, vec4 galeR1) {
+            // galeScale (0.3.0): shelter and chain lever, applied before the 0.2-block cap.
+            vec3 gale_offsetRS(vec3 galeP, float galeN1, float galeN2, float galeAmp, float galeLean, float galeWindy,
+                               vec4 galeR0, vec4 galeR1, float galeScale) {
                 vec2 galeDir = atmos_Wind.xy;
                 vec4 galeAxes = gale_axisWeights();
                 float galeCycle = gale_Wave.x * 0.0314159265;
@@ -489,13 +569,55 @@ public final class WavingFeatures {
                 float galeMain = (0.65 * galeR0.x * gale_travel(galeAxes, galeP.xz, galeP1 - galeR0.y, 0.45)
                         + 0.35 * galeR0.z * sin(galeP2 - galeR0.w)) * galeGust + galeLean * galeR1.z;
                 vec2 galeXZ = galeDir * galeMain + vec2(-galeDir.y, galeDir.x) * (0.3 * galeR1.x * sin(galeP3 - galeR1.y));
-                vec3 galeOff = vec3(galeXZ.x, 0.12 * galeR1.x * sin(galeP3 - galeR1.y + galeP1 - 0.45 * (galeP.x + galeP.z)), galeXZ.y) * (galeAmp * galeEnergy * gale_Wave.y);
-                float galeLen = length(galeOff);
-                return galeLen > 0.2 ? galeOff * (0.2 / galeLen) : galeOff;
+                vec3 galeOff = vec3(galeXZ.x, 0.12 * galeR1.x * sin(galeP3 - galeR1.y + galeP1 - 0.45 * (galeP.x + galeP.z)), galeXZ.y) * (galeAmp * galeEnergy * gale_Wave.y * galeScale);
+                return gale_cap(galeOff);
+            }
+            vec3 gale_offsetR(vec3 galeP, float galeN1, float galeN2, float galeAmp, float galeLean, float galeWindy,
+                              vec4 galeR0, vec4 galeR1) {
+                return gale_offsetRS(galeP, galeN1, galeN2, galeAmp, galeLean, galeWindy, galeR0, galeR1, 1.0);
+            }
+            vec3 gale_offsetS(vec3 galeP, float galeN1, float galeN2, float galeAmp, float galeLean, float galeWindy,
+                              float galeScale) {
+                return gale_offsetRS(galeP, galeN1, galeN2, galeAmp, galeLean, galeWindy, vec4(1.0, 0.0, 1.0, 0.0),
+                        vec4(1.0, 0.0, atmos_Wind.z, atmos_Wind.w), galeScale);
             }
             vec3 gale_offset(vec3 galeP, float galeN1, float galeN2, float galeAmp, float galeLean, float galeWindy) {
-                return gale_offsetR(galeP, galeN1, galeN2, galeAmp, galeLean, galeWindy, vec4(1.0, 0.0, 1.0, 0.0),
-                        vec4(1.0, 0.0, atmos_Wind.z, atmos_Wind.w));
+                return gale_offsetS(galeP, galeN1, galeN2, galeAmp, galeLean, galeWindy, 1.0);
+            }
+            // Shelter (0.3.0): sway is reduced (to 35% at full strength) under a sun-casting block more than half a
+            // block above the vertex, from the column field's caster top; 1 without field data or on LODs.
+            float gale_shelter(vec3 galeRel) {
+            #ifdef ATMOS_COLUMN_FIELD
+                if (gale_Contact.y > 0.0) {
+                    float galeTop = atmos_columnTop(galeRel);
+                    if (galeTop > -1e8) {
+                        float galeY = galeRel.y + atmos_CameraPos.y;
+                        return 1.0 - 0.65 * gale_Contact.y * smoothstep(galeY + 0.5, galeY + 2.5, galeTop);
+                    }
+                }
+            #endif
+                return 1.0;
+            }
+            // Entity bending (0.3.0): pushed away from the entity's axis and a little down, with a smooth radial
+            // falloff from 40% of its radius to radius + 0.5 blocks. Safe at zero distance (no direction there).
+            vec3 gale_pushOne(vec4 galeE, vec3 galeRel) {
+                if (galeE.w <= 0.0) return vec3(0.0);
+                vec3 galeD = galeRel - galeE.xyz;
+                if (galeD.y < -0.5 || galeD.y > 2.5) return vec3(0.0);
+                float galeDist = length(galeD.xz);
+                float galeF = 1.0 - smoothstep(galeE.w * 0.4, galeE.w + 0.5, galeDist);
+                if (galeF <= 0.0) return vec3(0.0);
+                vec2 galeDir = galeD.xz / max(galeDist, 1e-3) * min(galeDist * 1000.0, 1.0);
+                return vec3(galeDir.x * 0.25, -0.12, galeDir.y * 0.25) * galeF;
+            }
+            vec3 gale_push(vec3 galeRel) {
+                vec3 galeSum = gale_pushOne(gale_Push0, galeRel) + gale_pushOne(gale_Push1, galeRel)
+                        + gale_pushOne(gale_Push2, galeRel) + gale_pushOne(gale_Push3, galeRel);
+                if (gale_Contact.w > 4.5) {
+                    galeSum += gale_pushOne(gale_Push4, galeRel) + gale_pushOne(gale_Push5, galeRel)
+                            + gale_pushOne(gale_Push6, galeRel) + gale_pushOne(gale_Push7, galeRel);
+                }
+                return galeSum;
             }
             #endif
             """;

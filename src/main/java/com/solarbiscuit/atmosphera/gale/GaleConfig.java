@@ -18,6 +18,9 @@ public final class GaleConfig {
     public static AtmosOption<Double> lodShimmer;
     public static AtmosOption<Boolean> hangingSwing;
     public static AtmosOption<Double> leafFlutter;
+    public static AtmosOption<Double> entityBending;
+    public static AtmosOption<Double> shelter;
+    public static AtmosOption<Boolean> chainSwing;
 
     private GaleConfig() {
     }
@@ -47,6 +50,15 @@ public final class GaleConfig {
                         + "and follow the slow sway more than the quick flutter. Off: they move like ground plants.");
         leafFlutter = config.percent("leaf_flutter", 0.5, 0.0, 1.0, ChangeTier.LIVE, "Leaf flutter",
                 "Leaves close to you flicker a little in the light, as if turning in the wind (0% = off).");
+        entityBending = config.percent("entity_bending", 1.0, 0.0, 1.5, ChangeTier.LIVE, "Plants bend around you",
+                "Grass and flowers bend away from players, mobs and boats moving through them (the 8 nearest within "
+                        + "32 blocks). 0% = off.");
+        shelter = config.percent("shelter", 1.0, 0.0, 1.0, ChangeTier.LIVE, "Shelter from the wind",
+                "Plants, leaves and hanging blocks under a roof, a canopy or an overhang sway less. Needs "
+                        + "AtmospheraLib's column field (on whenever a mod uses it). 0% = off.");
+        chainSwing = config.toggle("chain_swing", true, ChangeTier.REMESH, "Longer chains swing further",
+                "Chains, vines and lanterns hanging under other hanging blocks swing further the longer the chain "
+                        + "above them (up to two blocks of lever), like a pendulum.");
 
         config.section("lod", "Voxy LODs: foliage keeps moving past the vanilla render distance (needs AtmospheraLib's Voxy LOD shading, no shader pack).");
         lodSway = config.toggle("lod_sway", true, ChangeTier.LIVE, "Sway on LODs",
