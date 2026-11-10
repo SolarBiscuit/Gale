@@ -5,7 +5,9 @@
   "compatibilityLevel": "JAVA_17",
   "refmap": "gale.refmap.json",
   "client": [
-    "BlockStateBaseMixin"
+    "BlockStateBaseMixin",
+    "LevelRendererRainMixin",
+    "ClientPacketListenerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

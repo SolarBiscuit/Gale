@@ -22,6 +22,9 @@ final class EntityPush {
     static final double[] Y = new double[MAX];
     static final double[] Z = new double[MAX];
     static final float[] RADIUS = new float[MAX];
+    /** 0.6.0: 0.6 standing to 1.0 at a sprint (0.28 blocks per tick and faster), from the horizontal speed. */
+    static final float[] INTENSITY = new float[MAX];
+    private static final double SPRINT_PER_TICK = 0.28;
     private static final double[] DIST = new double[MAX];
     static int count;
 
@@ -59,12 +62,15 @@ final class EntityPush {
                 Y[i] = Y[i - 1];
                 Z[i] = Z[i - 1];
                 RADIUS[i] = RADIUS[i - 1];
+                INTENSITY[i] = INTENSITY[i - 1];
                 DIST[i] = DIST[i - 1];
             }
             X[at] = x;
             Y[at] = y;
             Z[at] = z;
             RADIUS[at] = Math.min(1.5f, entity.getBbWidth() * 0.5f + 0.2f);
+            double speed = Math.hypot(entity.getX() - entity.xo, entity.getZ() - entity.zo);
+            INTENSITY[at] = (float) (0.6 + 0.4 * Math.min(speed / SPRINT_PER_TICK, 1.0));
             DIST[at] = d;
             if (count < MAX) {
                 count++;
@@ -72,7 +78,7 @@ final class EntityPush {
         }
     }
 
-    /** Frame slot {@code gale_Push<i>}: xyz feet position relative to the camera, w push radius (0 = none). */
+    /** Frame slot {@code gale_Push<i>}: xyz feet position relative to the camera, w radius and intensity (0 = none). */
     static void write(int i, float[] out) {
         if (i >= count) {
             out[0] = out[1] = out[2] = out[3] = 0f;
@@ -82,6 +88,7 @@ final class EntityPush {
         out[0] = (float) (X[i] - camera.x);
         out[1] = (float) (Y[i] - camera.y);
         out[2] = (float) (Z[i] - camera.z);
-        out[3] = RADIUS[i];
+        // 0.6.0: radius (< 2) + 2 * round(7 * intensity) (>= 8, so w > 0 still means "an entity").
+        out[3] = RADIUS[i] + 2f * Math.round(7f * INTENSITY[i]);
     }
 }

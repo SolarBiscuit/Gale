@@ -18,9 +18,19 @@ public final class GaleConfig {
     public static AtmosOption<Double> lodShimmer;
     public static AtmosOption<Boolean> hangingSwing;
     public static AtmosOption<Double> leafFlutter;
+    public static AtmosOption<Boolean> entityBendingOn;
     public static AtmosOption<Double> entityBending;
+    public static AtmosOption<Boolean> shelterOn;
     public static AtmosOption<Double> shelter;
     public static AtmosOption<Boolean> chainSwing;
+    public static AtmosOption<Double> chainSway;
+    public static AtmosOption<Boolean> plantBend;
+    public static AtmosOption<Boolean> explosionWave;
+    public static AtmosOption<Boolean> gustPatches;
+    public static AtmosOption<Boolean> windSheen;
+    public static AtmosOption<Boolean> stormTempo;
+    public static AtmosOption<Boolean> rainTiltOn;
+    public static AtmosOption<Double> rainTilt;
 
     private GaleConfig() {
     }
@@ -50,24 +60,53 @@ public final class GaleConfig {
                         + "and follow the slow sway more than the quick flutter. Off: they move like ground plants.");
         leafFlutter = config.percent("leaf_flutter", 0.5, 0.0, 1.0, ChangeTier.LIVE, "Leaf flutter",
                 "Leaves close to you flicker a little in the light, as if turning in the wind (0% = off).");
-        entityBending = config.percent("entity_bending", 1.0, 0.0, 1.5, ChangeTier.LIVE, "Plants bend around you",
+        entityBendingOn = config.toggle("entity_bending_enabled", true, ChangeTier.LIVE, "Plants bend around you",
                 "Grass and flowers bend away from players, mobs and boats moving through them (the 8 nearest within "
-                        + "32 blocks). 0% = off.");
-        shelter = config.percent("shelter", 1.0, 0.0, 1.0, ChangeTier.LIVE, "Shelter from the wind",
-                "Plants, leaves and hanging blocks under a roof, a canopy or an overhang sway less. Needs "
-                        + "AtmospheraLib's column field (on whenever a mod uses it). 0% = off.");
+                        + "32 blocks).");
+        entityBending = config.percent("entity_bending", 1.0, 0.0, 1.5, ChangeTier.LIVE, "Bending amount",
+                "How far plants bend away.");
+        shelterOn = config.toggle("shelter_enabled", true, ChangeTier.LIVE, "Shelter from the wind",
+                "Plants, leaves and hanging blocks under a roof, a canopy or an overhang sway less.");
+        shelter = config.percent("shelter", 1.0, 0.0, 1.0, ChangeTier.LIVE, "Shelter amount",
+                "How much calmer sheltered blocks are (100%: down to 35% of the sway)."); 
         chainSwing = config.toggle("chain_swing", true, ChangeTier.REMESH, "Longer chains swing further",
                 "Chains, vines and lanterns hanging under other hanging blocks swing further the longer the chain "
                         + "above them (up to two blocks of lever), like a pendulum.");
 
-        config.section("lod", "Voxy LODs: foliage keeps moving past the vanilla render distance (needs AtmospheraLib's Voxy LOD shading, no shader pack).");
+        chainSway = config.percent("chain_sway", 1.0, 0.0, 2.0, ChangeTier.LIVE, "Chain sway",
+                "How far hanging chains sway in the wind (vanilla and modded chains, e.g. Additional Lanterns). "
+                        + "0% = chains hold still; lanterns under them still swing from the chain's end.");
+        plantBend = config.toggle("plant_bend", true, ChangeTier.REMESH, "Tall plants bend from the root",
+                "Tall grass, sunflowers, sugar cane and kelp curve over their first two blocks like a stem, instead of "
+                        + "tilting stiffly at the top of the first block; bent stems get a little shorter.");
+        explosionWave = config.toggle("explosion_wave", true, ChangeTier.LIVE, "Explosion shockwaves",
+                "Explosions send a short ring outward that flattens plants and shakes leaves (scaled by \"Bending amount\").");
+        gustPatches = config.toggle("gust_patches", true, ChangeTier.LIVE, "Gust patches",
+                "Gusts sweep over fields and canopies in irregular patches that drift downwind and change shape. "
+                        + "Off: the older, regular rolling bands.");
+        windSheen = config.toggle("wind_sheen", true, ChangeTier.LIVE, "Wind sheen up close",
+                "Grass, crops and leaves near you brighten and darken as gusts pass, like wind rolling over a wheat "
+                        + "field. Strength: \"Wind sheen\" in the LOD group (shared with distant foliage).");
+        stormTempo = config.toggle("storm_tempo", true, ChangeTier.LIVE, "Storm tempo",
+                "Foliage sways faster in strong wind and storms (up to 1.6 times), not only further.");
+
+        config.section("weather","Weather: rain and snow follow the wind (works with shader packs too).");
+        rainTiltOn = config.toggle("rain_tilt_enabled", true, ChangeTier.LIVE, "Rain follows the wind",
+                "Rain and snow streaks lean with the wind: more in storms and gusts and in open land, less in "
+                        + "forests and caves. Snow drifts twice as far as rain.");
+        rainTilt = config.percent("rain_tilt", 1.0, 0.0, 2.0, ChangeTier.LIVE, "Rain tilt amount",
+                "How far the streaks lean. 100%: about 15 degrees in steady rain on open land, up to about 35 degrees "
+                        + "in thunderstorm gusts.");
+
+        config.section("lod","Voxy LODs: foliage keeps moving past the vanilla render distance (needs AtmospheraLib's Voxy LOD shading, no shader pack).");
         lodSway = config.toggle("lod_sway", true, ChangeTier.LIVE, "Sway on LODs",
                 "Distant Voxy/NeoVoxy LOD foliage sways too. Close to the render distance it moves exactly like the "
                         + "blocks nearby, further out the motion turns into light rolling over canopies and fields as gusts pass.");
         lodSwayDistance = config.percent("lod_sway_distance", 2.5, 1.0, 4.0, ChangeTier.LIVE, "LOD sway distance",
                 "How far LOD foliage keeps moving, as a share of the vanilla render distance (250% = 2.5 times as far).");
-        lodShimmer = config.percent("lod_canopy_shimmer", 0.05, 0.0, 0.15, ChangeTier.LIVE, "LOD canopy shimmer",
-                "Strength of the wind waves of light on distant LOD canopies and fields (0% = no shading change).");
+        lodShimmer = config.percent("lod_canopy_shimmer", 0.05, 0.0, 0.15, ChangeTier.LIVE, "Wind sheen",
+                "Strength of the waves of light that gusts send over foliage: on distant LOD canopies and fields, and "
+                        + "up close when \"Wind sheen up close\" is on (0% = no shading change).");
         config.register();
     }
 }

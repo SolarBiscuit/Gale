@@ -131,6 +131,12 @@ public final class WavingLoader extends SimplePreparableReloadListener<WavingLoa
             return state.hasProperty(LanternBlock.HANGING) && state.getValue(LanternBlock.HANGING)
                     ? WavingTable.HANGING : WavingTable.NONE;
         }
+        if (block instanceof ChainBlock) {
+            // 0.6.3: vertical chains hang (vanilla, Additional Lanterns and any other ChainBlock subclass); horizontal
+            // chains are rigid links.
+            return state.hasProperty(ChainBlock.AXIS) && state.getValue(ChainBlock.AXIS) == net.minecraft.core.Direction.Axis.Y
+                    ? WavingTable.HANGING : WavingTable.NONE;
+        }
         if (block instanceof VineBlock || block instanceof HangingRootsBlock || block instanceof CaveVines
                 || block instanceof WeepingVinesBlock || block instanceof WeepingVinesPlantBlock) {
             return WavingTable.HANGING;
