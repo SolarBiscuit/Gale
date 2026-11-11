@@ -24,6 +24,8 @@ public final class GaleConfig {
     public static AtmosOption<Double> shelter;
     public static AtmosOption<Boolean> chainSwing;
     public static AtmosOption<Double> chainSway;
+    public static AtmosOption<Boolean> banners;
+    public static AtmosOption<Boolean> connectibleChains;
     public static AtmosOption<Boolean> plantBend;
     public static AtmosOption<Boolean> explosionWave;
     public static AtmosOption<Boolean> gustPatches;
@@ -76,6 +78,12 @@ public final class GaleConfig {
         chainSway = config.percent("chain_sway", 1.0, 0.0, 2.0, ChangeTier.LIVE, "Chain sway",
                 "How far hanging chains sway in the wind (vanilla and modded chains, e.g. Additional Lanterns). "
                         + "0% = chains hold still; lanterns under them still swing from the chain's end.");
+        banners = config.toggle("banners", true, ChangeTier.LIVE, "Banners in the wind",
+                "Banner flags blow downwind and flutter more as the wind rises; sheltered banners stay calm. "
+                        + "How far follows \"Sway amount\".");
+        connectibleChains = config.toggle("connectible_chains", true, ChangeTier.LIVE, "Connectible Chains swing",
+                "Chains strung between fences with Connectible Chains (if installed) swing sideways in the wind, with "
+                        + "everything hung on them. How far follows \"Chain sway\".");
         plantBend = config.toggle("plant_bend", true, ChangeTier.REMESH, "Tall plants bend from the root",
                 "Tall grass, sunflowers, sugar cane and kelp curve over their first two blocks like a stem, instead of "
                         + "tilting stiffly at the top of the first block; bent stems get a little shorter.");

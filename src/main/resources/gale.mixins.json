@@ -4,10 +4,13 @@
   "package": "com.solarbiscuit.atmosphera.gale.mixin",
   "compatibilityLevel": "JAVA_17",
   "refmap": "gale.refmap.json",
+  "plugin": "com.solarbiscuit.atmosphera.gale.mixin.GaleMixinPlugin",
   "client": [
     "BlockStateBaseMixin",
     "LevelRendererRainMixin",
-    "ClientPacketListenerMixin"
+    "ClientPacketListenerMixin",
+    "BannerRendererMixin",
+    "ConnectibleChainsMixin"
   ],
   "injectors": {
     "defaultRequire": 1

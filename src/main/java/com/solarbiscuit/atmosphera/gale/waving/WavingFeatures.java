@@ -444,6 +444,11 @@ public final class WavingFeatures {
      * it is resent every tick); integrating here, not in the uniform writer, keeps the step once per frame however
      * often the uniform block is rewritten, and a speed change does not jump the phase.
      */
+    /** 0.7.0: Gale's sway time (seconds x speed x storm tempo, wraps at 200), for banners and ropes. Render thread. */
+    public static double swayTime() {
+        return swayTime;
+    }
+
     public static void stepSwayTime() {
         double dt = AtmosClock.deltaSeconds();
         stepTempo(dt);
