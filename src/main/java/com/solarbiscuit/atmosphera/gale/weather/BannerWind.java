@@ -4,6 +4,7 @@ import com.solarbiscuit.atmosphera.gale.GaleConfig;
 import com.solarbiscuit.atmosphera.gale.waving.WavingFeatures;
 import com.solarbiscuit.atmosphera.lib.wind.Wind;
 import com.solarbiscuit.atmosphera.lib.wind.WindVector;
+import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
@@ -28,7 +29,32 @@ public final class BannerWind {
     private static final double FLUTTER_CYCLES = 260.0 / 200.0;
     private static final float MAX_LIFT = 0.6f;
 
+    // 0.7.2: the banner the renderer is drawing, from the head of BannerRenderer.render until renderPatterns.
+    private static BannerBlockEntity current;
+    private static float currentPartialTick;
+    private static ModelPart currentFlag;
+
     private BannerWind() {
+    }
+
+    /** Head of {@code BannerRenderer.render}: remembers the banner and the renderer's flag part. */
+    public static void begin(BannerBlockEntity banner, float partialTick, ModelPart flag) {
+        current = banner;
+        currentPartialTick = partialTick;
+        currentFlag = flag;
+    }
+
+    /**
+     * Head of {@code renderPatterns} for a banner: sets the flag angle, after vanilla (or a mod drawing the banner
+     * itself, such as OBE) has set its own. Only for the flag of the banner begun last, once.
+     */
+    public static void apply(ModelPart part) {
+        BannerBlockEntity banner = current;
+        if (banner == null || part != currentFlag) {
+            return;
+        }
+        current = null;
+        part.xRot = flagAngle(banner, currentPartialTick, part.xRot);
     }
 
     /** The flag angle for this banner this frame, or {@code vanilla} when the option is off or there is no level. */
@@ -48,6 +74,8 @@ public final class BannerWind {
         }
         BlockPos pos = banner.getBlockPos();
         Wind.sample(level, pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5, partialTick, WIND);
+        // 0.7.1: a roof or canopy just above the banner shelters it (the sample only counts deep shelter).
+        WIND.strength *= LocalShelter.factor(level, pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5);
         float amount = (float) Math.min(2.0, GaleConfig.amplitude.get());
         float drive = Math.min(WIND.strength, 1.6f) * amount;
         float yaw = yawDeg * Mth.DEG_TO_RAD;

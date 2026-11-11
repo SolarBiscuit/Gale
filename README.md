@@ -77,7 +77,7 @@ Bridges for Falling Leaves Forged and Atmospherics are small changes in those mo
 
 1. Install AtmospheraLib and an Embeddium-based terrain renderer.
 2. Place `gale-<version>-mc1.20.1-forge.jar` in `mods`.
-3. Options are in the Atmosphera tab of Video Settings, and in `config/SolConfig/atmosphera/`.
+3. Options are in the Atmosphera tab of Video Settings, and in `config/Atmosphera/` (before AtmospheraLib 0.6.7: `config/SolConfig/atmosphera/`, moved across automatically).
 
 ## Building
 

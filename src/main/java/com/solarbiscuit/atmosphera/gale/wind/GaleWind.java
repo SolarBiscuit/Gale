@@ -85,9 +85,18 @@ public final class GaleWind implements WindProvider {
         int bz = Mth.floor(z);
         float open = openness(level, bx, Mth.floor(y), bz);
         double altitude = Mth.clamp((y - level.getSeaLevel()) / 96.0, 0.0, 0.6);
-        double shelter = y < level.getHeight(Heightmap.Types.MOTION_BLOCKING, bx, bz) - 3 ? 0.35 : 1.0;
+        double shelter = deepSheltered(level, x, y, z) ? 0.35 : 1.0;
         double ripple = 1.0 + 0.15 * Math.sin(x * 0.031 + t * 0.5) * Math.cos(z * 0.027 - t * 0.4);
         out.strength = Mth.clamp((float) (out.strength * open * (1.0 + altitude) * shelter * ripple), 0f, 1f);
+    }
+
+    /**
+     * The shelter term of {@link #sample}: more than 3 blocks below the motion-blocking surface (the wind there is
+     * 35%). Coarse on purpose (any thread, heightmap only), so a roof just above a position does not count; render
+     * thread users add the column field's closer test ({@code weather.LocalShelter}, 0.7.1).
+     */
+    public static boolean deepSheltered(Level level, double x, double y, double z) {
+        return y < level.getHeight(Heightmap.Types.MOTION_BLOCKING, Mth.floor(x), Mth.floor(z)) - 3;
     }
 
     /** Wind factor of the biome at a block position: about 0.35 (caves) to 1.4 (peaks); 1 is neutral. */

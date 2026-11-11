@@ -87,10 +87,12 @@ public final class RopeWind {
         double midZ = (start.z + end.z) * 0.5;
         Wind.sample(level, midX, midY, midZ, Minecraft.getInstance().getFrameTime(), WIND);
         float cross = WIND.dirX * mx + WIND.dirZ * mz;
-        float drive = Math.min(WIND.strength, 1.6f);
+        // 0.7.1: a roof just above the span shelters it; the gust swing reads the global gust, so it is scaled too.
+        float shelter = LocalShelter.factor(level, midX, midY, midZ);
+        float drive = Math.min(WIND.strength * shelter, 1.6f);
         double phase = WavingFeatures.swayTime() * SWING_CYCLES + ((int) Math.floor(midX * 3 + midZ * 5) & 1023) * 0.0619;
         float theta = amount * horizontal
-                * (0.30f * drive * cross + 0.10f * WIND.gust * (float) Math.sin(Mth.TWO_PI * phase));
+                * (0.30f * drive * cross + 0.10f * shelter * WIND.gust * (float) Math.sin(Mth.TWO_PI * phase));
         theta = Mth.clamp(theta, -MAX_ANGLE, MAX_ANGLE);
         if (Math.abs(theta) < 1e-4f) {
             return;

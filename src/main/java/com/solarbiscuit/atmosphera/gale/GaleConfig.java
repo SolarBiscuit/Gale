@@ -4,7 +4,7 @@ import com.solarbiscuit.atmosphera.lib.options.AtmosConfig;
 import com.solarbiscuit.atmosphera.lib.options.AtmosOption;
 import com.solarbiscuit.atmosphera.lib.options.ChangeTier;
 
-/** {@code config/SolConfig/atmosphera/gale-client.toml} and the Gale group in Video Settings > Atmosphera. */
+/** {@code config/Atmosphera/gale-client.toml} and the Gale group in Video Settings > Atmosphera. */
 public final class GaleConfig {
     public static AtmosConfig.FeatureSwitch waving;
     public static AtmosOption<Boolean> leaves;
@@ -68,7 +68,8 @@ public final class GaleConfig {
         entityBending = config.percent("entity_bending", 1.0, 0.0, 1.5, ChangeTier.LIVE, "Bending amount",
                 "How far plants bend away.");
         shelterOn = config.toggle("shelter_enabled", true, ChangeTier.LIVE, "Shelter from the wind",
-                "Plants, leaves and hanging blocks under a roof, a canopy or an overhang sway less.");
+                "Plants, leaves, hanging blocks, banners and strung chains under a roof, a canopy or an overhang sway "
+                        + "less.");
         shelter = config.percent("shelter", 1.0, 0.0, 1.0, ChangeTier.LIVE, "Shelter amount",
                 "How much calmer sheltered blocks are (100%: down to 35% of the sway)."); 
         chainSwing = config.toggle("chain_swing", true, ChangeTier.REMESH, "Longer chains swing further",
@@ -79,7 +80,8 @@ public final class GaleConfig {
                 "How far hanging chains sway in the wind (vanilla and modded chains, e.g. Additional Lanterns). "
                         + "0% = chains hold still; lanterns under them still swing from the chain's end.");
         banners = config.toggle("banners", true, ChangeTier.LIVE, "Banners in the wind",
-                "Banner flags blow downwind and flutter more as the wind rises; sheltered banners stay calm. "
+                "Banner flags blow downwind and flutter more as the wind rises; banners under a roof or canopy stay "
+                        + "calmer (\"Shelter amount\"). "
                         + "How far follows \"Sway amount\".");
         connectibleChains = config.toggle("connectible_chains", true, ChangeTier.LIVE, "Connectible Chains swing",
                 "Chains strung between fences with Connectible Chains (if installed) swing sideways in the wind, with "
