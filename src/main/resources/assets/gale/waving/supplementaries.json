@@ -1,0 +1,6 @@
+{
+    "_comment": "Supplementaries (0.7.3). Only hanging rope swings (up=true, no horizontal connection); horizontal spans and knots stay rigid. 'chains' is hanging plus the chain mark: the chain_sway slider applies and a lantern under a rope does not crack.",
+    "chains": [
+        "supplementaries:rope[up=true,north=false,south=false,east=false,west=false]"
+    ]
+}

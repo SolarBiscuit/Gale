@@ -3,6 +3,7 @@ package com.solarbiscuit.atmosphera.gale.wind;
 import com.solarbiscuit.atmosphera.lib.wind.AtmosClock;
 import com.solarbiscuit.atmosphera.lib.wind.WindProvider;
 import com.solarbiscuit.atmosphera.lib.wind.WindVector;
+import com.solarbiscuit.atmosphera.lib.world.Weather;
 import net.minecraft.core.Holder;
 import net.minecraft.core.QuartPos;
 import net.minecraft.resources.ResourceKey;
@@ -24,10 +25,15 @@ import java.util.concurrent.ConcurrentHashMap;
  *     <li><b>Strength</b> rises with rain and thunder; dimensions without a sky (Nether, End) are calm.</li>
  *     <li><b>{@link #sample} adds the local terms:</b> biome openness (plains and peaks windy, forests and caves
  *     calm, overridable with {@code biome_openness} in {@code assets/<ns>/waving/*.json}), altitude above sea level,
- *     shelter under the motion-blocking surface, and a slow spatial ripple.</li>
+ *     shelter under the motion-blocking surface, a slow spatial ripple, and (0.8.0) the terrain: passes and crests
+ *     speed the wind up, valleys and lee slopes slow it ({@link Terrain}).</li>
  * </ul>
  * Everything is a function of AtmosClock (the lib's smoothed world clock, which follows game time without its
  * catch-up jumps), weather, dimension and position, so clients see nearly the same wind with no networking. Safe from any thread and allocation-free after the first lookup of each biome.
+ * <p>
+ * 0.9.0: common code. It runs on a dedicated server too (flight and the later gameplay terms), so it touches no
+ * client class: the client's options arrive through {@link Tuning} and the camera's eased openness lives in the
+ * client-only {@link ClientOpenness}.
  */
 public final class GaleWind implements WindProvider {
     public static final GaleWind INSTANCE = new GaleWind();
@@ -37,17 +43,42 @@ public final class GaleWind implements WindProvider {
     private final Map<Biome, Float> openness = new ConcurrentHashMap<>();
     private volatile Map<ResourceLocation, Float> overrides = Map.of();
 
-    // Render thread only: the camera's openness, eased so biome borders do not snap the sway amount.
-    private float cameraOpenness = 1f;
-    private long lastCameraNanos;
-    private Level lastCameraLevel;
-    private double lastCameraX;
-    private double lastCameraY;
-    private double lastCameraZ;
-    /** A camera move longer than this in one frame is a teleport: the openness snaps instead of easing (0.1.9). */
-    private static final double SNAP_DISTANCE_SQ = 32.0 * 32.0;
+    /**
+     * The options only a client has (0.8.0): the TOML-only {@code wind.terrain} and {@code wind.storm_strength}.
+     * The server never installs one, so it always runs the defaults (terrain on, storm strength 1).
+     */
+    public interface Tuning {
+        boolean terrain();
+
+        /** Multiplier on the rain and thunder terms, 0.5..2. */
+        float stormStrength();
+    }
+
+    private static final Tuning DEFAULTS = new Tuning() {
+        @Override
+        public boolean terrain() {
+            return true;
+        }
+
+        @Override
+        public float stormStrength() {
+            return 1f;
+        }
+    };
+    private volatile Tuning tuning = DEFAULTS;
+
+    /** What rain means to the wind at ordinary rain (the weather service's 0.8). */
+    private static final float ORDINARY_RAIN = 0.8f;
+
+    /** Per-thread scratch for the weather reading: {@code global} is called from several threads at once. */
+    private static final ThreadLocal<Weather.Sample> WEATHER = ThreadLocal.withInitial(Weather.Sample::new);
 
     private GaleWind() {
+    }
+
+    /** Client, at start-up: connects the options only a client has. */
+    public void setTuning(Tuning value) {
+        tuning = value == null ? DEFAULTS : value;
     }
 
     @Override
@@ -58,11 +89,21 @@ public final class GaleWind implements WindProvider {
     @Override
     public void global(Level level, float partialTick, WindVector out) {
         double t = AtmosClock.worldSeconds(level, partialTick);
-        float rain = level.getRainLevel(partialTick);
-        float thunder = level.getThunderLevel(partialTick);
+        // 0.8.0: the storm terms. With vanilla weather and storm_strength 1 the factors are exactly 1, so this is
+        // the wind of 0.7.x. A weather mod's state scales the rain term by how heavy its spell is (0.8 is
+        // ordinary rain) and both terms by its own wind factor; storm_strength is the player's or pack's multiplier.
+        Weather.Sample weather = WEATHER.get();
+        Weather.current(level, partialTick, weather);
+        float stormScale = tuning.stormStrength() * weather.windFactor;
+        float rainScale = stormScale;
+        if (weather.modelled) {
+            rainScale *= Mth.clamp(weather.intensity / ORDINARY_RAIN, 0.4f, 1.6f);
+        }
+        float rain = level.getRainLevel(partialTick) * rainScale;
+        float thunder = level.getThunderLevel(partialTick) * stormScale;
 
         double g = 0.5 * Math.sin(t * 0.29) + 0.3 * Math.sin(t * 0.113 + 1.1) + 0.2 * Math.sin(t * 0.71 + 2.3);
-        double threshold = 0.35 - 0.25 * rain - 0.15 * thunder;
+        double threshold = Math.max(0.35 - 0.25 * rain - 0.15 * thunder, -0.6);
         float gust = (float) Mth.clamp((g - threshold) / (1.0 - threshold), 0.0, 1.0);
         gust = gust * gust * (3f - 2f * gust);
 
@@ -87,7 +128,9 @@ public final class GaleWind implements WindProvider {
         double altitude = Mth.clamp((y - level.getSeaLevel()) / 96.0, 0.0, 0.6);
         double shelter = deepSheltered(level, x, y, z) ? 0.35 : 1.0;
         double ripple = 1.0 + 0.15 * Math.sin(x * 0.031 + t * 0.5) * Math.cos(z * 0.027 - t * 0.4);
-        out.strength = Mth.clamp((float) (out.strength * open * (1.0 + altitude) * shelter * ripple), 0f, 1f);
+        double terrain = tuning.terrain() ? Terrain.factor(level, bx, bz, out.dirX, out.dirZ) : 1.0;
+        out.strength = Mth.clamp((float) (out.strength * open * (1.0 + altitude) * shelter * ripple * terrain), 0f,
+                1f);
     }
 
     /**
@@ -116,33 +159,6 @@ public final class GaleWind implements WindProvider {
         return value;
     }
 
-    /**
-     * Render thread, once per frame: openness at the camera, eased over a few seconds (gale_Wave.z) so biome borders
-     * do not snap the sway amount. A new level (join, dimension change) or a camera jump over 32 blocks (teleport,
-     * spectator switch) snaps to the new value: easing there only showed the wrong sway for a few seconds.
-     */
-    public float cameraOpenness(Level level, double x, double y, double z) {
-        float target = openness(level, Mth.floor(x), Mth.floor(y), Mth.floor(z));
-        long now = System.nanoTime();
-        double dx = x - lastCameraX;
-        double dy = y - lastCameraY;
-        double dz = z - lastCameraZ;
-        boolean jump = level != lastCameraLevel || dx * dx + dy * dy + dz * dz > SNAP_DISTANCE_SQ;
-        lastCameraLevel = level;
-        lastCameraX = x;
-        lastCameraY = y;
-        lastCameraZ = z;
-        if (lastCameraNanos == 0 || jump) {
-            lastCameraNanos = now;
-            cameraOpenness = target;
-            return cameraOpenness;
-        }
-        double dt = Math.min((now - lastCameraNanos) / 1.0e9, 10.0);
-        lastCameraNanos = now;
-        cameraOpenness += (float) ((target - cameraOpenness) * (1.0 - Math.exp(-dt / 2.5)));
-        return cameraOpenness;
-    }
-
     /** From the waving JSON files, at resource reload. */
     public void setOpennessOverrides(Map<ResourceLocation, Float> byBiome) {
         overrides = byBiome;
@@ -151,7 +167,6 @@ public final class GaleWind implements WindProvider {
 
     public void clearCaches() {
         openness.clear();
-        lastCameraLevel = null;
     }
 
     private static float byName(String path) {

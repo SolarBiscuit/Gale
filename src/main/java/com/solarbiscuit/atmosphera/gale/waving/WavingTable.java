@@ -27,8 +27,16 @@ public final class WavingTable {
     public static final byte PLANTS = 2;
     public static final byte HANGING = 3;
     public static final byte AQUATIC = 4;
+    /**
+     * 0.7.3: the chain mark, a flag on top of the class in a stored entry (classification, table and per-state
+     * cache): set by the ChainBlock heuristic and by the {@code chains} JSON key, only together with HANGING.
+     */
+    static final byte CHAIN_FLAG = (byte) 0x80;
+    static final byte CHAIN_HANGING = (byte) (HANGING | CHAIN_FLAG);
+    /** The class part of a stored entry. */
+    static final int KIND_MASK = 0x7F;
 
-    /** Waving states found at the last resource reload, with their classes. */
+    /** Waving states found at the last classification (reload, tags or blacklist), with their classes and chain flags. */
     record Classification(BlockState[] states, byte[] kinds, int[] counts, int files) {
     }
 
@@ -122,7 +130,7 @@ public final class WavingTable {
             return NONE;
         }
         int id = Block.getId(state);
-        return id >= 0 && id < kinds.length ? kinds[id] : NONE;
+        return id >= 0 && id < kinds.length ? kinds[id] & 0xFF : NONE;
     }
 
     /**
@@ -130,6 +138,16 @@ public final class WavingTable {
      * the table version (0.1.9; one field read per call). Without the cache field, remembers the last state per thread.
      */
     public static int kind(BlockState state) {
+        return entry(state) & KIND_MASK;
+    }
+
+    /** 0.7.3: whether the state is a chain (hanging, with the chain mark): vanilla and modded chains, ropes. */
+    public static boolean isChain(BlockState state) {
+        return (entry(state) & (CHAIN_FLAG & 0xFF)) != 0;
+    }
+
+    /** The stored entry (class and chain flag) behind {@link #kind} and {@link #isChain}; same cost as before the flag. */
+    private static int entry(BlockState state) {
         WavingTable table = current;
         if (state.canOcclude() && !table.occludingEntries) {
             return NONE;
@@ -140,9 +158,9 @@ public final class WavingTable {
             if (packed >>> 8 == table.version) {
                 return packed & 0xFF;
             }
-            int kind = table.lookup(state);
-            cache.gale$setPackedKind(table.version << 8 | kind);
-            return kind;
+            int entry = table.lookup(state);
+            cache.gale$setPackedKind(table.version << 8 | entry);
+            return entry;
         }
         Scratch scratch = SCRATCH.get();
         if (scratch.state != state || scratch.table != table) {

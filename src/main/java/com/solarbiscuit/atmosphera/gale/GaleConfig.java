@@ -4,6 +4,8 @@ import com.solarbiscuit.atmosphera.lib.options.AtmosConfig;
 import com.solarbiscuit.atmosphera.lib.options.AtmosOption;
 import com.solarbiscuit.atmosphera.lib.options.ChangeTier;
 
+import java.util.List;
+
 /** {@code config/Atmosphera/gale-client.toml} and the Gale group in Video Settings > Atmosphera. */
 public final class GaleConfig {
     public static AtmosConfig.FeatureSwitch waving;
@@ -31,14 +33,22 @@ public final class GaleConfig {
     public static AtmosOption<Boolean> gustPatches;
     public static AtmosOption<Boolean> windSheen;
     public static AtmosOption<Boolean> stormTempo;
+    /** 0.7.3: TOML only; applied by {@code WavingLoader} (it reclassifies the blocks, not only a remesh). */
+    public static AtmosOption<List<? extends String>> blacklist;
     public static AtmosOption<Boolean> rainTiltOn;
     public static AtmosOption<Double> rainTilt;
+    /** 0.8.0: TOML only; the channel and ridge speed-up of the wind ({@code wind.GaleWind}). */
+    public static AtmosOption<Boolean> terrain;
+    /** 0.8.0: TOML only; multiplies the rain and thunder terms of the wind. */
+    public static AtmosOption<Double> stormStrength;
+    /** 0.10.0: TOML only; lets the player decline the elytra wind the server announced. */
+    public static AtmosOption<Boolean> elytra;
 
     private GaleConfig() {
     }
 
     static void register() {
-        AtmosConfig config = AtmosConfig.create(Gale.MOD_ID, "Gale (wind)");
+        AtmosConfig config = AtmosConfig.create(Gale.MOD_ID, "Gale");
         config.section("waving", "Waving foliage: blocks sway in the shared Atmosphera wind.");
         waving = config.featureSwitch("enabled", true, "Waving foliage",
                 "Master switch for every waving class below.");
@@ -76,6 +86,8 @@ public final class GaleConfig {
                 "Chains, vines and lanterns hanging under other hanging blocks swing further the longer the chain "
                         + "above them (up to two blocks of lever), like a pendulum.");
 
+        // 0.7.3: from here to storm_tempo the options are TOML only (all on by default), to keep the page short.
+        config.fileOnly(true);
         chainSway = config.percent("chain_sway", 1.0, 0.0, 2.0, ChangeTier.LIVE, "Chain sway",
                 "How far hanging chains sway in the wind (vanilla and modded chains, e.g. Additional Lanterns). "
                         + "0% = chains hold still; lanterns under them still swing from the chain's end.");
@@ -96,9 +108,16 @@ public final class GaleConfig {
                         + "Off: the older, regular rolling bands.");
         windSheen = config.toggle("wind_sheen", true, ChangeTier.LIVE, "Wind sheen up close",
                 "Grass, crops and leaves near you brighten and darken as gusts pass, like wind rolling over a wheat "
-                        + "field. Strength: \"Wind sheen\" in the LOD group (shared with distant foliage).");
+                        + "field. Strength: lod.lod_canopy_shimmer, \"Wind sheen\" in Video Settings (shared with distant foliage).");
         stormTempo = config.toggle("storm_tempo", true, ChangeTier.LIVE, "Storm tempo",
                 "Foliage sways faster in strong wind and storms (up to 1.6 times), not only further.");
+        blacklist = config.stringList("blacklist", List.of(), ChangeTier.REMESH, "Waving blacklist",
+                "Blocks that never wave, whatever the tags, the built-in rules or a resource pack say (vanilla "
+                        + "blocks too). Entries: a block id, id[property=value,...], namespace:* or #namespace:tag. "
+                        + "Example: [\"croptopia:*\", \"minecraft:grass\", \"minecraft:tall_grass[half=upper]\", "
+                        + "\"#minecraft:flowers\"].");
+
+        config.fileOnly(false);
 
         config.section("weather","Weather: rain and snow follow the wind (works with shader packs too).");
         rainTiltOn = config.toggle("rain_tilt_enabled", true, ChangeTier.LIVE, "Rain follows the wind",
@@ -108,6 +127,20 @@ public final class GaleConfig {
                 "How far the streaks lean. 100%: about 15 degrees in steady rain on open land, up to about 35 degrees "
                         + "in thunderstorm gusts.");
 
+        // 0.8.0 / 0.10.0: the wind itself. All TOML only, so the Video Settings page stays as short as it was.
+        config.section("wind", "Wind: how the shared wind field behaves.");
+        config.fileOnly(true);
+        terrain = config.toggle("terrain", true, ChangeTier.LIVE, "Wind follows the terrain",
+                "The wind speeds up through narrow passes between hills and over crests and ridges, and eases in "
+                        + "valleys and in the lee of slopes (up to 1.8 times and down to 0.6 times).");
+        stormStrength = config.percent("storm_strength", 1.0, 0.5, 2.0, ChangeTier.LIVE, "Storm strength",
+                "Multiplies what rain and thunder add to the wind's strength and to how often it gusts. 100% is the "
+                        + "default; more makes wilder storms.");
+        elytra = config.toggle("elytra", true, ChangeTier.LIVE, "Wind on the elytra",
+                "While gliding, the wind pushes you (headwind slows, tailwind speeds you up, crosswind drifts you), "
+                        + "when the server runs it (always in singleplayer). Off: you decline it on this client.");
+        config.fileOnly(false);
+
         config.section("lod","Voxy LODs: foliage keeps moving past the vanilla render distance (needs AtmospheraLib's Voxy LOD shading, no shader pack).");
         lodSway = config.toggle("lod_sway", true, ChangeTier.LIVE, "Sway on LODs",
                 "Distant Voxy/NeoVoxy LOD foliage sways too. Close to the render distance it moves exactly like the "
@@ -116,7 +149,7 @@ public final class GaleConfig {
                 "How far LOD foliage keeps moving, as a share of the vanilla render distance (250% = 2.5 times as far).");
         lodShimmer = config.percent("lod_canopy_shimmer", 0.05, 0.0, 0.15, ChangeTier.LIVE, "Wind sheen",
                 "Strength of the waves of light that gusts send over foliage: on distant LOD canopies and fields, and "
-                        + "up close when \"Wind sheen up close\" is on (0% = no shading change).");
+                        + "up close while waving.wind_sheen is on in the file (0% = no shading change).");
         config.register();
     }
 }

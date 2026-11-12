@@ -2,7 +2,7 @@ package com.solarbiscuit.atmosphera.gale.waving;
 
 import com.solarbiscuit.atmosphera.gale.Gale;
 import com.solarbiscuit.atmosphera.gale.GaleConfig;
-import com.solarbiscuit.atmosphera.gale.wind.GaleWind;
+import com.solarbiscuit.atmosphera.gale.wind.ClientOpenness;
 import com.solarbiscuit.atmosphera.lib.feature.AtmosFeature;
 import com.solarbiscuit.atmosphera.lib.feature.Capability;
 import com.solarbiscuit.atmosphera.lib.gpu.FrameUniforms;
@@ -118,12 +118,14 @@ public final class WavingFeatures {
                             // 0.3.0: the lever arm below the chain's anchor (thirds of a block; 0 = unknown, 1 block).
                             float galeQ = float(%4$s(atmos_LightBits));
                             float galeLever = gale_Contact.z > 0.5 && galeQ > 0.5 ? galeQ / 3.0 : 1.0;
-                            vec3 galeHangOff = gale_offsetRS(atmos_worldPos(position), 90.0, 210.0, 0.13, 0.35, 1.0, gale_Hang0, gale_Hang1,
-                                    galeShelter * galeLever);
-                            if (%5$s(atmos_LightBits) != 0u) {
-                                // 0.6.3: chains sway by the chain sway amount (0 = they hold still).
-                                galeHangOff *= gale_Chain.x;
-                            }
+                            // 0.10.1: a longer arm swings a little more than in proportion (x1.15 at 2 blocks), and
+                            // hanging blocks follow the wind more (amplitude 0.15, lean 0.45; were 0.13, 0.35).
+                            float galeArm = galeLever * (1.0 + 0.15 * max(galeLever - 1.0, 0.0));
+                            // 0.6.3: chains sway by the chain sway amount (0 = they hold still); 0.10.1: applied before
+                            // the 0.2-block cap, so a chain sway above 100%% never exceeds it.
+                            float galeChainScale = %5$s(atmos_LightBits) != 0u ? gale_Chain.x : 1.0;
+                            vec3 galeHangOff = gale_offsetRS(atmos_worldPos(position), 90.0, 210.0, 0.15, 0.45, 1.0, gale_Hang0, gale_Hang1,
+                                    galeShelter * galeArm * galeChainScale);
                             if (galeQ > 0.5) {
                                 // 0.6.0 arc: a swinging pendulum rises at the ends of its swing.
                                 galeHangOff = gale_arc(galeHangOff, 1.0 / max(galeLever, 0.3333));
@@ -311,10 +313,12 @@ public final class WavingFeatures {
         return new WaveHook(kind, waveClass.set(0, classValue), false);
     }
 
-    /** 0.6.3: a hanging (vertical, not excluded by a waving JSON) chain block. */
+    /**
+     * 0.6.3: a hanging chain block. 0.7.3: asked of the table, which flags vertical ChainBlocks and the blocks of the
+     * {@code chains} JSON key (Supplementaries rope), and clears the flag for anything a JSON or the blacklist stops.
+     */
     private static boolean isChain(BlockState state) {
-        return state.getBlock() instanceof net.minecraft.world.level.block.ChainBlock
-                && WavingTable.kind(state) == WavingTable.HANGING;
+        return WavingTable.isChain(state);
     }
 
     private static WaveHook anchoredHook(byte kind, int classValue) {
@@ -485,7 +489,7 @@ public final class WavingFeatures {
         out[0] = (float) swayTime;
         Camera camera = mc.gameRenderer.getMainCamera();
         Vec3 eye = camera.getPosition();
-        out[2] = GaleWind.INSTANCE.cameraOpenness(level, eye.x, eye.y, eye.z);
+        out[2] = ClientOpenness.update(level, eye.x, eye.y, eye.z);
         cameraOpenness = out[2];
         out[3] = level.getSeaLevel();
     }

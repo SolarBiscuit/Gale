@@ -1,9 +1,19 @@
 {
-    "_comment": "Gale waving classes for vanilla. Most vanilla blocks are found by class (leaves, bushes, vines, kelp, seagrass); this file names the rest and the exceptions. Resource packs and mods can add files under assets/<namespace>/waving/. Entries: block id, id[property=value,...] or namespace:*. Later packs win; \"replace\": true ignores lower packs' copies of the same file.",
+    "_comment": "Gale waving classes for vanilla. Most vanilla blocks are found by class (leaves, bushes, vines, kelp, seagrass); this file names the rest and the exceptions. Resource packs and mods can add files under assets/<namespace>/waving/. Entries: block id, id[property=value,...], namespace:* or #namespace:tag (tags arrive with the server's tag packet at login). Precedence, lowest first: class heuristics, tags, block ids, the waving.blacklist option. Later packs win; \"replace\": true ignores lower packs' copies of the same file.",
+    "leaves": [
+        "#minecraft:leaves"
+    ],
+    "plants": [
+        "#minecraft:crops",
+        "#minecraft:saplings",
+        "#minecraft:small_flowers",
+        "#minecraft:tall_flowers"
+    ],
     "hanging": [
         "minecraft:lantern[hanging=true]",
         "minecraft:soul_lantern[hanging=true]",
-        "minecraft:hanging_roots"
+        "minecraft:hanging_roots",
+        "minecraft:mangrove_propagule[hanging=true]"
     ],
     "none": [
         "minecraft:lily_pad",

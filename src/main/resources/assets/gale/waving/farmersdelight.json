@@ -1,0 +1,11 @@
+{
+    "_comment": "Farmer's Delight (0.7.3). Rice holds water, so the class heuristic calls it aquatic while its panicles above are plants; as plants the rice column bends as one from its root. The mushroom colonies are bushes that would wave, unlike vanilla mushrooms.",
+    "plants": [
+        "farmersdelight:rice",
+        "farmersdelight:wild_rice"
+    ],
+    "none": [
+        "farmersdelight:brown_mushroom_colony",
+        "farmersdelight:red_mushroom_colony"
+    ]
+}

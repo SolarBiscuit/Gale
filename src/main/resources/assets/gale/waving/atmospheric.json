@@ -1,0 +1,21 @@
+{
+    "_comment": "Atmospheric (6.1.1). Its leaves, saplings, flowers, aloe, agave and yucca flowers are already found by class and tag. Passion vines climb walls like vanilla vines and hang from their top; currants and yucca branches hang under leaves; leaf piles lie on the ground and on walls and move like leaves.",
+    "leaves": [
+        "atmospheric:aspen_leaf_pile",
+        "atmospheric:currant_leaf_pile",
+        "atmospheric:dry_laurel_leaf_pile",
+        "atmospheric:flowering_morado_leaf_pile",
+        "atmospheric:green_aspen_leaf_pile",
+        "atmospheric:grimwood_leaf_pile",
+        "atmospheric:kousa_leaf_pile",
+        "atmospheric:laurel_leaf_pile",
+        "atmospheric:morado_leaf_pile",
+        "atmospheric:rosewood_leaf_pile",
+        "atmospheric:yucca_leaf_pile"
+    ],
+    "hanging": [
+        "atmospheric:passion_vine",
+        "atmospheric:hanging_currant",
+        "atmospheric:yucca_branch"
+    ]
+}

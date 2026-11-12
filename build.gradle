@@ -38,6 +38,12 @@ minecraft {
 
         client {
         }
+
+        // Dedicated-server smoke test (0.9.0): Gale must load without any client class.
+        server {
+            workingDirectory project.file('run-server')
+            args '--nogui'
+        }
     }
 }
 
